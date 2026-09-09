@@ -1,0 +1,7 @@
+settings.json
+counter-state.json
+error.log
+*.lnk
+*.jsonl
+.test-work/
+dist/

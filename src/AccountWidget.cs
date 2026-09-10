@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Drawing;
@@ -12,6 +12,9 @@ namespace CodexUsage {
   public string codexHome, codexExe,selectedTaskFile;
   public bool taskbarDisplay=true;
   public int? compactX,compactY;
+  public string compactAlignment="left";
+  public void SetAlignment(string value){compactAlignment=NormalizeAlignment(value);compactX=null;compactY=null;}
+  public static string NormalizeAlignment(string value){return value=="center" || value=="right" ? value : "left";}
   public static Preferences Load(string path) {try{return new JavaScriptSerializer().Deserialize<Preferences>(File.ReadAllText(path))??new Preferences();}catch{return new Preferences();}}
   public void Save(string path) {try{File.WriteAllText(path,new JavaScriptSerializer().Serialize(this));}catch(IOException){}catch(UnauthorizedAccessException){}}
  }
@@ -23,6 +26,10 @@ namespace CodexUsage {
   readonly ToolTip hint=new ToolTip();
   [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h,IntPtr after,int x,int y,int cx,int cy,uint flags);
   [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll",CharSet=CharSet.Auto)] static extern IntPtr FindWindow(string cls,string title);
+  [DllImport("user32.dll",CharSet=CharSet.Auto)] static extern IntPtr FindWindowEx(IntPtr parent,IntPtr after,string cls,string title);
+  [StructLayout(LayoutKind.Sequential)] struct NativeRect {public int Left,Top,Right,Bottom;}
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window,out NativeRect rect);
   protected override bool ShowWithoutActivation {get{return true;}}
   public CompactDisplay(Preferences p,Action save,Action showMain) {
    prefs=p;changed=save;open=showMain;Text="Codex 작은 상태바";FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;TopMost=true;
@@ -41,9 +48,18 @@ namespace CodexUsage {
    var menu=new ContextMenuStrip();menu.Items.Add("사용량 창 열기",null,delegate{open();});menu.Items.Add("위치 자동 맞춤",null,delegate{ResetPosition();});ContextMenuStrip=menu;first.ContextMenuStrip=menu;second.ContextMenuStrip=menu;
   }
   public void ResetPosition(){prefs.compactX=null;prefs.compactY=null;changed();AlignToTaskbar();}
+  public void SetAlignment(string value){prefs.SetAlignment(value);changed();AlignToTaskbar();}
   public void ApplyTheme(){palette=Palette.Read(true);BackColor=palette.Surface;ForeColor=palette.Text;first.ForeColor=palette.Text;second.ForeColor=palette.Muted;palette.Frame(this,true);}
   public static Point FitToWorkArea(Rectangle area,Point location,Size size){return new Point(Math.Max(area.Left,Math.Min(location.X,area.Right-size.Width)),Math.Max(area.Top,Math.Min(location.Y,area.Bottom-size.Height)));}
-  public static Point LeftTaskbarPosition(Rectangle screen,Rectangle area,Size size){int barHeight=screen.Bottom-area.Bottom;return barHeight>=size.Height && barHeight<=128 ? new Point(screen.Left+6,area.Bottom+(barHeight-size.Height)/2) : new Point(area.Left+6,Math.Max(area.Top,area.Bottom-size.Height-4));}
+  public static Point LeftTaskbarPosition(Rectangle screen,Rectangle area,Size size){return TaskbarPosition(screen,area,size,"left",null);}
+  public static Point TaskbarPosition(Rectangle screen,Rectangle area,Size size,string alignment,int? trayLeft){
+   int barHeight=screen.Bottom-area.Bottom;bool bottom=barHeight>=size.Height && barHeight<=128;
+   Rectangle bounds=bottom ? screen : area;int x=bounds.Left+6;
+   if(alignment=="center")x=bounds.Left+(bounds.Width-size.Width)/2;
+   if(alignment=="right")x=(bottom ? (trayLeft.HasValue ? trayLeft.Value : bounds.Right-280) : bounds.Right)-size.Width-6;
+   x=Math.Max(bounds.Left,Math.Min(x,Math.Max(bounds.Left,bounds.Right-size.Width)));
+   return new Point(x,bottom ? area.Bottom+(barHeight-size.Height)/2 : Math.Max(area.Top,area.Bottom-size.Height-4));
+  }
   public void AlignToTaskbar() {
    if(dragging)return;
    if(prefs.compactX.HasValue && prefs.compactY.HasValue) {
@@ -51,7 +67,10 @@ namespace CodexUsage {
     var screen=Screen.AllScreens.FirstOrDefault(s=>s.Bounds.IntersectsWith(saved));
     if(screen!=null){Location=FitToWorkArea(screen.WorkingArea,saved.Location,Size);return;}
    }
-   var primary=Screen.PrimaryScreen;Location=LeftTaskbarPosition(primary.Bounds,primary.WorkingArea,Size);
+   var primary=Screen.PrimaryScreen;int? trayLeft=null;NativeRect rect;
+   var trayWindow=FindWindowEx(FindWindow("Shell_TrayWnd",null),IntPtr.Zero,"TrayNotifyWnd",null);
+   if(trayWindow!=IntPtr.Zero && GetWindowRect(trayWindow,out rect) && rect.Left>primary.Bounds.Left && rect.Left<primary.Bounds.Right && rect.Bottom>primary.WorkingArea.Bottom)trayLeft=rect.Left;
+   Location=TaskbarPosition(primary.Bounds,primary.WorkingArea,Size,prefs.compactAlignment,trayLeft);
   }
   public void UpdateValues(AccountSnapshot s) {
    var v=UsageView.Build(s,DateTimeOffset.Now);
@@ -69,6 +88,7 @@ namespace CodexUsage {
   readonly DetailsPanel dailyPage=new DetailsPanel(true),taskPage=new DetailsPanel(false);
   readonly System.Collections.Generic.List<Control> summaryControls=new System.Collections.Generic.List<Control>();
   readonly Button[] pageButtons=new Button[3];int selectedPage;
+  readonly Button[] positionButtons=new Button[3];readonly string[] alignments={"left","center","right"};
   readonly Preferences prefs;readonly string prefsPath;
   readonly AccountMonitor monitor;
   readonly NotifyIcon tray=new NotifyIcon();readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer();
@@ -103,13 +123,14 @@ namespace CodexUsage {
    MakeLabel("다음 초기화",new Rectangle(202,186,180,22),9,muted);
    reset.Bounds=new Rectangle(202,213,180,27);reset.Font=new Font("Segoe UI",12);Controls.Add(reset);
    track.Bounds=new Rectangle(20,253,360,4);progress.Height=4;track.Controls.Add(progress);Controls.Add(track);
-   status.Bounds=new Rectangle(20,282,270,20);status.Font=new Font("Segoe UI",8);status.Tag="muted";Controls.Add(status);
+   status.Bounds=new Rectangle(20,274,106,34);status.Font=new Font("Segoe UI",8);status.Tag="muted";Controls.Add(status);
    foreach(Control c in Controls)if(c.Top>=44 && c.Top<270)summaryControls.Add(c);
    Controls.Add(dailyPage);Controls.Add(taskPage);
    if(String.IsNullOrEmpty(prefs.selectedTaskFile)||!File.Exists(prefs.selectedTaskFile)){var recent=TaskCatalog.Recent(prefs.codexHome);prefs.selectedTaskFile=recent.Length>0 ? recent[0].Path : null;}
    taskMonitor=new TaskMonitor(prefs.selectedTaskFile);
    compactSwitch.Checked=prefs.taskbarDisplay;
-   compact=new CompactDisplay(prefs,delegate{prefs.Save(prefsPath);},ShowWidget);
+   compact=new CompactDisplay(prefs,delegate{prefs.Save(prefsPath);UpdatePositionButtons();},ShowWidget);
+   string[] positionNames={"왼쪽","중앙","오른쪽"};for(int i=0;i<3;i++){int index=i;positionButtons[i]=MakeButton(positionNames[i],new Rectangle(132+i*52,276,48,28));positionButtons[i].Font=new Font("Segoe UI",8);positionButtons[i].Click+=delegate{compact.SetAlignment(alignments[index]);compactSwitch.Checked=true;};hints.SetToolTip(positionButtons[i],"작은 상태바를 "+positionNames[i]+"에 배치하고 위치를 저장합니다.");}
    compact.FormClosing+=delegate(object sender,FormClosingEventArgs e){if(e.CloseReason==CloseReason.UserClosing){e.Cancel=true;compactSwitch.Checked=false;compact.Hide();}};
    compactSwitch.CheckedChanged+=delegate {prefs.taskbarDisplay=compactSwitch.Checked;prefs.Save(prefsPath);if(prefs.taskbarDisplay){compact.Show();compact.AlignToTaskbar();}else compact.Hide();};
    monitor=new AccountMonitor(prefs.codexExe,prefs.codexHome,null);
@@ -131,11 +152,12 @@ namespace CodexUsage {
   }
   string FindCodex(){string local=Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);string root=Path.Combine(local,"OpenAI","Codex","bin");if(Directory.Exists(root)){var matches=Directory.GetFiles(root,"codex.exe",SearchOption.AllDirectories);if(matches.Length>0)return matches.OrderByDescending(File.GetLastWriteTimeUtc).First();}return "codex.exe";}
   void UpdateStartupButton(){startupButton.Text=StartupRegistration.IsEnabled ? "자동 시작 켜짐" : "자동 시작 꺼짐";}
+  void UpdatePositionButtons(){for(int i=0;i<positionButtons.Length;i++){var b=positionButtons[i];if(b==null)continue;bool selected=!prefs.compactX.HasValue && !prefs.compactY.HasValue && Preferences.NormalizeAlignment(prefs.compactAlignment)==alignments[i];b.BackColor=selected ? palette.Track : palette.Button;b.ForeColor=selected ? palette.Accent : palette.Muted;b.AccessibleDescription=selected ? "선택됨" : "작은 상태바 위치 변경";}}
   void LoadTaskMenu(){taskMenu.DropDownItems.Clear();var entries=TaskCatalog.Recent(prefs.codexHome);if(entries.Length==0)taskMenu.DropDownItems.Add(new ToolStripMenuItem("이 PC에 기록된 작업 없음"){Enabled=false});foreach(var entry in entries){var selected=entry;var item=new ToolStripMenuItem(entry.Title.Length>36 ? entry.Title.Substring(0,36)+"…" : entry.Title){Checked=String.Equals(prefs.selectedTaskFile,entry.Path,StringComparison.OrdinalIgnoreCase)};item.Click+=delegate{taskMonitor.Dispose();prefs.selectedTaskFile=selected.Path;prefs.Save(prefsPath);taskMonitor=new TaskMonitor(selected.Path);taskMonitor.Start();SelectPage(2);RefreshDisplay();};taskMenu.DropDownItems.Add(item);}}
   Label MakeLabel(string text,Rectangle r,float size,Color color){var l=new Label{Text=text,Bounds=r,Font=new Font("Segoe UI",size),ForeColor=color,Tag="muted"};Controls.Add(l);return l;}
   Button MakeButton(string text,Rectangle r){var b=new Button{Text=text,Bounds=r,FlatStyle=FlatStyle.Flat,BackColor=palette.Button,ForeColor=ForeColor};b.FlatAppearance.BorderSize=0;Controls.Add(b);return b;}
   void SelectPage(int page){selectedPage=page;foreach(var control in summaryControls)control.Visible=page==0;dailyPage.Visible=page==1;taskPage.Visible=page==2;for(int i=0;i<pageButtons.Length;i++){pageButtons[i].BackColor=i==page ? palette.Track : palette.Surface;pageButtons[i].ForeColor=i==page ? palette.Accent : palette.Muted;}}
-  void ApplyTheme(){palette=Palette.Read(false);muted=palette.Muted;accent=palette.Accent;BackColor=palette.Surface;ForeColor=palette.Text;foreach(Control c in Controls){c.ForeColor=Object.Equals(c.Tag,"muted") ? muted : ForeColor;if(c is Button)c.BackColor=palette.Button;}track.BackColor=palette.Track;progress.BackColor=accent;palette.Frame(this,false);compact.ApplyTheme();dailyPage.ApplyTheme(palette);taskPage.ApplyTheme(palette);SelectPage(selectedPage);lastIcon=-999;lastSnapshot=null;nextTheme=DateTime.UtcNow.AddSeconds(30);}
+  void ApplyTheme(){palette=Palette.Read(false);muted=palette.Muted;accent=palette.Accent;BackColor=palette.Surface;ForeColor=palette.Text;foreach(Control c in Controls){c.ForeColor=Object.Equals(c.Tag,"muted") ? muted : ForeColor;if(c is Button)c.BackColor=palette.Button;}track.BackColor=palette.Track;progress.BackColor=accent;palette.Frame(this,false);compact.ApplyTheme();dailyPage.ApplyTheme(palette);taskPage.ApplyTheme(palette);SelectPage(selectedPage);UpdatePositionButtons();lastIcon=-999;lastSnapshot=null;nextTheme=DateTime.UtcNow.AddSeconds(30);}
   void DockMain(){var r=Screen.FromPoint(Cursor.Position).WorkingArea;Location=new Point(r.Right-Width-14,r.Bottom-Height-12);}
   void ShowWidget(){WindowState=FormWindowState.Normal;Show();DockMain();Activate();BringToFront();}
   static string Stamp(DateTimeOffset? t){return t.HasValue ? t.Value.LocalDateTime.ToString("HH:mm:ss") : "대기";}
@@ -153,7 +175,7 @@ namespace CodexUsage {
    progress.BackColor=s.Period!=null && s.Period.Remaining<=10 ? Color.FromArgb(218,135,36) : accent;
    detail.Text="계정 전체 누적 · 서버 집계 반영 지연 가능";
    if(v.TokensStale)detail.Text+=" · 재확인 중";
-   status.Text=v.Stale ? "연결 확인 중 · 마지막 확인 값" : (s.Period==null ? "" : s.Period.Caption+" · ")+Stamp(s.LimitsFetchedAt)+" 확인";
+   status.Text=v.Stale ? "연결 확인 중\n마지막 확인 값" : (s.Period==null ? "" : s.Period.Caption+"\n")+Stamp(s.LimitsFetchedAt)+" 확인";
    hints.SetToolTip(status,"한도는 10초, 총 토큰은 60초마다 조회합니다.\n서버의 토큰 집계는 지연될 수 있습니다.");
    tray.Text="Codex | 총 "+v.CompactLifetime+" tok | 잔여 "+v.Remaining+" | "+v.Reset+(v.Stale || v.TokensStale ? " *" : "");
    UpdateIcon(v.Stale ? -1 : s.Period==null ? -1 : (int)Math.Floor(s.Period.Remaining));

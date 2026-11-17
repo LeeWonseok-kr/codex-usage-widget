@@ -21,8 +21,8 @@ namespace CodexUsage {
  public sealed class CompactDisplay : Form {
   readonly Label first=new Label(),second=new Label();
   readonly Preferences prefs; readonly Action changed,open;
-  bool dragging; Point startMouse,startWindow;
-  Palette palette;DateTime nextAlignment=DateTime.MinValue;IntPtr lastForeground;
+  bool dragging,pressed; Point startMouse,startWindow;
+  Palette palette;DateTime nextAlignment=DateTime.MinValue;
   readonly ToolTip hint=new ToolTip();
   [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h,IntPtr after,int x,int y,int cx,int cy,uint flags);
   [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
@@ -41,9 +41,10 @@ namespace CodexUsage {
    ApplyTheme();HandleCreated+=delegate{ApplyTheme();};FormClosed+=delegate{hint.Dispose();};
    foreach(Control c in new Control[]{this,first,second}) {
     c.Cursor=Cursors.SizeAll;
-    c.MouseDown+=delegate(object sender,MouseEventArgs e){if(e.Button==MouseButtons.Left){dragging=false;startMouse=Cursor.Position;startWindow=Location;((Control)sender).Capture=true;}};
-    c.MouseMove+=delegate(object sender,MouseEventArgs e){if(e.Button!=MouseButtons.Left)return;Point at=Cursor.Position;int dx=at.X-startMouse.X,dy=at.Y-startMouse.Y;if(Math.Abs(dx)+Math.Abs(dy)>5)dragging=true;if(dragging)Location=new Point(startWindow.X+dx,startWindow.Y+dy);};
-    c.MouseUp+=delegate(object sender,MouseEventArgs e){((Control)sender).Capture=false;if(e.Button!=MouseButtons.Left)return;bool moved=dragging;dragging=false;if(moved){Location=FitToWorkArea(Screen.FromPoint(Location).WorkingArea,Location,Size);prefs.compactX=Left;prefs.compactY=Top;changed();}else open();};
+    c.MouseCaptureChanged+=delegate(object sender,EventArgs e){if(!((Control)sender).Capture){pressed=false;dragging=false;}};
+    c.MouseDown+=delegate(object sender,MouseEventArgs e){if(e.Button==MouseButtons.Left){pressed=true;dragging=false;startMouse=Cursor.Position;startWindow=Location;((Control)sender).Capture=true;}};
+    c.MouseMove+=delegate(object sender,MouseEventArgs e){if(!pressed || e.Button!=MouseButtons.Left)return;Point at=Cursor.Position;int dx=at.X-startMouse.X,dy=at.Y-startMouse.Y;if(Math.Abs(dx)+Math.Abs(dy)>5)dragging=true;if(dragging)Location=new Point(startWindow.X+dx,startWindow.Y+dy);};
+    c.MouseUp+=delegate(object sender,MouseEventArgs e){if(e.Button!=MouseButtons.Left || !pressed)return;bool moved=dragging;pressed=false;dragging=false;((Control)sender).Capture=false;if(moved){Location=FitToWorkArea(Screen.FromPoint(Location).Bounds,Location,Size);prefs.compactX=Left;prefs.compactY=Top;changed();}else open();};
    }
    var menu=new ContextMenuStrip();menu.Items.Add("사용량 창 열기",null,delegate{open();});menu.Items.Add("위치 자동 맞춤",null,delegate{ResetPosition();});ContextMenuStrip=menu;first.ContextMenuStrip=menu;second.ContextMenuStrip=menu;
   }
@@ -65,7 +66,7 @@ namespace CodexUsage {
    if(prefs.compactX.HasValue && prefs.compactY.HasValue) {
     var saved=new Rectangle(prefs.compactX.Value,prefs.compactY.Value,Width,Height);
     var screen=Screen.AllScreens.FirstOrDefault(s=>s.Bounds.IntersectsWith(saved));
-    if(screen!=null){Location=FitToWorkArea(screen.WorkingArea,saved.Location,Size);return;}
+    if(screen!=null){Location=FitToWorkArea(screen.Bounds,saved.Location,Size);return;}
    }
    var primary=Screen.PrimaryScreen;int? trayLeft=null;NativeRect rect;
    var trayWindow=FindWindowEx(FindWindow("Shell_TrayWnd",null),IntPtr.Zero,"TrayNotifyWnd",null);
@@ -79,7 +80,7 @@ namespace CodexUsage {
    if(first.Text!=line1 || second.Text!=line2){first.Text=line1;second.Text=line2;int textWidth=Math.Max(TextRenderer.MeasureText(line1,first.Font).Width,TextRenderer.MeasureText(line2,second.Font).Width);Width=textWidth+10;first.Width=second.Width=textWidth;nextAlignment=DateTime.MinValue;}
    first.ForeColor=palette.Text;second.ForeColor=v.Stale ? palette.Muted : palette.Text;
    if(DateTime.UtcNow>=nextAlignment){AlignToTaskbar();nextAlignment=DateTime.UtcNow.AddSeconds(5);}
-   IntPtr foreground=GetForegroundWindow();if(Visible && IsHandleCreated && foreground!=lastForeground){SetWindowPos(Handle,new IntPtr(-1),0,0,0,0,0x13);lastForeground=foreground;}
+   if(Visible && IsHandleCreated && !dragging){SetWindowPos(Handle,new IntPtr(-1),0,0,0,0,0x13);}
   }
   public static string FormatShort(long n){return n>=1000000000 ? (n/1000000000d).ToString("0.00")+"B" : n>=1000000 ? (n/1000000d).ToString("0.00")+"M" : n>=1000 ? (n/1000d).ToString("0.0")+"K" : n.ToString();}
  }

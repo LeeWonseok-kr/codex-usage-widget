@@ -19,6 +19,27 @@ The startup toggle creates a shortcut in the current Windows user's Startup fold
 
 Each PC uses the Codex account signed in on that PC. You do not need to copy authentication files, another PC's `settings.json`, or task history.
 
+## Updating an existing installation
+
+1. Quit the running widget completely with **Ctrl+Shift+Q** from the details window, or use the exit item in the **···** menu.
+2. Download the latest ZIP and replace `CodexUsage.exe` in your existing installation folder. Keep your local `settings.json`.
+3. Run the updated executable. If the overlay is hidden, use the overlay toggle in **···** or click a position button.
+4. Turn automatic startup off and back on from the updated app to register its current path. Do this separately on each PC.
+
+Do not copy settings or authentication files between PCs. Updating the download does not automatically update an existing installation or its Startup shortcut.
+
+### Latest fixes
+
+- Releasing a drag no longer clamps the overlay to the desktop area above the taskbar.
+- Dragging requires a mouse press that started on the widget; losing mouse capture cancels the drag state.
+- The visible overlay periodically refreshes its topmost position to recover from being covered.
+
+The build and 20 automated checks passed. Limited mouse tests did not reproduce the jump outside the taskbar, but automated dragging did not confirm normal manual movement. Launching the actual Startup shortcut was verified on one PC; this does not reproduce Windows sign-in timing or guarantee that every intermittent startup issue is resolved.
+
+### If the overlay is missing
+
+Check Task Manager for `CodexUsage.exe`. If it is running, check the overlay toggle and reset its position. If it is not running, verify that automatic startup is enabled and the shortcut points to an existing executable. An `error.log` in the installation folder, when present, can help diagnose startup failures.
+
 ## Displayed information
 
 - **Summary** (first tab): account-wide lifetime tokens, token aggregation date, remaining quota, and next reset time.

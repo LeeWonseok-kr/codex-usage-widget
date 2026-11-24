@@ -4,19 +4,19 @@ namespace CodexUsage {
   readonly bool daily;readonly Label headline,value,state,aggregate;
   readonly Label[] names=new Label[7],values=new Label[7];
   readonly ToolTip hints=new ToolTip();
-  public DetailsPanel(bool daily){this.daily=daily;Bounds=new Rectangle(20,44,360,220);Visible=false;
+  public DetailsPanel(bool daily){this.daily=daily;Bounds=new Rectangle(20,68,360,176);Visible=false;
    headline=LabelAt(daily ? "계정 전체 · 최근 집계된 7일" : "선택한 작업 · 이 PC에 기록된 토큰",0,0,360,21,9,true);
    if(daily){
-    LabelAt("집계일",0,27,160,20,8,true);var heading=LabelAt("사용 토큰",180,27,180,20,8,true);heading.TextAlign=ContentAlignment.MiddleRight;
-    for(int i=0;i<7;i++){names[i]=LabelAt("",0,51+i*20,130,20,9,false);values[i]=LabelAt("",140,51+i*20,220,20,9,false);values[i].TextAlign=ContentAlignment.MiddleRight;}
-    LabelAt("표시된 날짜 합계",0,199,160,21,9,true);aggregate=LabelAt("—",160,199,200,21,10,false);aggregate.TextAlign=ContentAlignment.MiddleRight;
+    LabelAt("집계일",0,22,160,18,8,true);var heading=LabelAt("사용 토큰",180,22,180,18,8,true);heading.TextAlign=ContentAlignment.MiddleRight;
+    for(int i=0;i<7;i++){names[i]=LabelAt("",0,42+i*16,130,16,9,false);values[i]=LabelAt("",140,42+i*16,220,16,9,false);values[i].TextAlign=ContentAlignment.MiddleRight;}
+    LabelAt("표시된 날짜 합계",0,156,160,20,9,true);aggregate=LabelAt("—",160,156,200,20,10,false);aggregate.TextAlign=ContentAlignment.MiddleRight;
     hints.SetToolTip(headline,"서버의 일별 집계입니다. 아직 반영되지 않은 날짜를 0으로 계산하지 않습니다.");
    }else{
-    value=LabelAt("—",-3,23,360,40,23,false);value.Font=new Font("Segoe UI",23,FontStyle.Bold);
-    state=LabelAt("기록 확인 중",0,66,360,22,8,true);
+    value=LabelAt("—",-3,21,360,38,23,false);value.Font=new Font("Segoe UI",23,FontStyle.Bold);
+    state=LabelAt("기록 확인 중",0,60,360,18,8,true);
     string[] labels={"입력 토큰","출력 토큰","캐시 토큰 · 입력에 포함","마지막 기록"};
-    for(int i=0;i<4;i++){names[i]=LabelAt(labels[i],0,99+i*26,190,22,9,true);values[i]=LabelAt("—",186,99+i*26,174,22,9,false);values[i].TextAlign=ContentAlignment.MiddleRight;}
-    LabelAt("작업 변경: ··· 메뉴 → 작업 선택",0,204,360,16,8,true);
+    for(int i=0;i<4;i++){names[i]=LabelAt(labels[i],0,84+i*22,190,20,9,true);values[i]=LabelAt("—",186,84+i*22,174,20,9,false);values[i].TextAlign=ContentAlignment.MiddleRight;}
+    hints.SetToolTip(headline,"작업 변경: ··· 메뉴 → 작업 선택");
     hints.SetToolTip(value,"선택한 작업의 기록된 누적 토큰입니다. 입력과 출력을 포함합니다.");
     hints.SetToolTip(names[2],"캐시는 입력 토큰의 일부입니다. 전체 사용량에 중복해서 더하지 않습니다.");
    }
